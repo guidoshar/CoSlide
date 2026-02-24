@@ -1,6 +1,10 @@
 # CoSlide — Guido PPTX Generator
 
 一个带 **Retro‑Pop Ticket Brutalism**（复古波点票据粗野主义）视觉系统的 Web 工具：登录后输入自然语言需求，调用 **Azure OpenAI** 生成结构化 JSON，再在浏览器端生成并下载 **PPTX**（或导出自包含 **HTML 演示文稿**）。
+<img width="841" height="297" alt="coslide_logo" src="https://github.com/user-attachments/assets/d7b0435c-2308-4a42-af61-2aaafbb72a0f" />
+
+<img width="1952" height="1292" alt="37ee20579cbac414e3343650c90e590b" src="https://github.com/user-attachments/assets/247173c0-3523-4bd7-9996-d569a3ad0fb0" />
+
 
 ## 功能特性
 
@@ -11,6 +15,9 @@
   - **风格**：EXECUTIVE / CREATIVE / MINIMAL / STORY（影响提示词与配色）
   - **语言**：AUTO / 中文 / EN / 日本語
 - **完成面板**：操作时间线 + AI 友善总结 + 幻灯片预览 + 点选下载 + 继续修改
+
+<img width="2558" height="1287" alt="image" src="https://github.com/user-attachments/assets/4a30205d-bf15-4166-9bbe-3086b38157c6" />
+
 
 ## 技术栈
 
