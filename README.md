@@ -59,26 +59,6 @@ npm run build
 npm run start
 ```
 
-## 部署（Vercel）
-
-1. 在 Vercel 导入 GitHub 仓库 `guidoshar/CoSlide`
-2. **Framework Preset**：Next.js（默认即可）
-3. 在 **Project Settings → Environment Variables** 配置：
-   - `AZURE_OPENAI_API_KEY`
-   - `AZURE_OPENAI_ENDPOINT`
-   - `AZURE_OPENAI_DEPLOYMENT`
-4. 触发部署（`main` 分支 push 即可自动部署）
-
-## 推送到 GitHub（首次）
-
-如果你是首次把本地仓库推到 `guidoshar/CoSlide`：
-
-```bash
-git remote add origin https://github.com/guidoshar/CoSlide.git
-git branch -M main
-git push -u origin main
-```
-
 ## 目录速览
 
 ```txt
