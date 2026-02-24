@@ -1,0 +1,19 @@
+services:
+  coslide:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT:-}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT:-}
+      - PDF_PARSER_URL=http://pdf-parser:5001
+    depends_on:
+      - pdf-parser
+    restart: unless-stopped
+
+  pdf-parser:
+    build: ./services/pdf-parser
+    ports:
+      - "5001:5001"
+    restart: unless-stopped

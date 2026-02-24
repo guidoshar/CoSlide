@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { loadLLMConfig } from "@/lib/llm-config";
 
 type Step = "name" | "profession" | "preferences" | "generating" | "confirm";
 
@@ -72,6 +73,7 @@ export default function OnboardingModal({ onComplete, onSkip }: OnboardingModalP
           name: name.trim(),
           profession: profession.trim(),
           preferences: preferences.trim(),
+          llmConfig: loadLLMConfig() || undefined,
         }),
       });
 

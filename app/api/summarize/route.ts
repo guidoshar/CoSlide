@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { AzureOpenAI } from "openai";
+import { resolveConfig, chatCompletion } from "@/lib/llm-client";
+import type { LLMConfig } from "@/lib/llm-config";
 
 const SYSTEM_PROMPT = `你是 CoSlide 的 AI 助手，一个温暖、友善、有点可爱的女孩形象。用户刚刚通过你生成了一份 PPT 演示文稿。
 
@@ -20,33 +21,19 @@ export async function POST(request: NextRequest) {
   let slideCount = 0;
 
   try {
-    const { presentation, userPrompt, userProfile } = await request.json();
+    const { presentation, userPrompt, userProfile, llmConfig: requestLLMConfig } = await request.json();
 
     title = presentation?.title || "演示文稿";
     slideCount = presentation?.slides?.length || 0;
 
     if (!presentation?.slides?.length) {
-      return NextResponse.json(
-        { summary: buildFallbackSummary(title, slideCount) }
-      );
+      return NextResponse.json({ summary: buildFallbackSummary(title, slideCount) });
     }
 
-    const apiKey = process.env.AZURE_OPENAI_API_KEY;
-    const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-    const deployment = process.env.AZURE_OPENAI_DEPLOYMENT;
-
-    if (!apiKey || !endpoint || !deployment) {
-      return NextResponse.json(
-        { summary: buildFallbackSummary(title, slideCount) }
-      );
+    const config = resolveConfig(requestLLMConfig as LLMConfig | undefined);
+    if (!config) {
+      return NextResponse.json({ summary: buildFallbackSummary(title, slideCount) });
     }
-
-    const client = new AzureOpenAI({
-      apiKey,
-      endpoint,
-      deployment,
-      apiVersion: "2024-12-01-preview",
-    });
 
     const slidesSummary = presentation.slides
       .map((s: { title: string }, i: number) => `第${i + 1}页: ${s.title}`)
@@ -59,24 +46,20 @@ export async function POST(request: NextRequest) {
 共 ${presentation.slides.length} 页幻灯片：
 ${slidesSummary}`;
 
-    const completion = await client.chat.completions.create({
-      model: deployment,
-      messages: [
+    const content = await chatCompletion(
+      config,
+      [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userContent },
       ],
-      max_completion_tokens: 1024,
-    });
-
-    const content = completion.choices[0]?.message?.content;
+      1024,
+    );
 
     return NextResponse.json({
-      summary: content?.trim() || buildFallbackSummary(title, slideCount),
+      summary: content.trim() || buildFallbackSummary(title, slideCount),
     });
   } catch (err) {
     console.error("[/api/summarize]", err);
-    return NextResponse.json({
-      summary: buildFallbackSummary(title, slideCount),
-    });
+    return NextResponse.json({ summary: buildFallbackSummary(title, slideCount) });
   }
 }

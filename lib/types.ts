@@ -42,4 +42,5 @@ export interface HistoryItem {
   slideCount: number;
   createdAt: number;
   presentation: Presentation;
+  aiSummary?: string;
 }

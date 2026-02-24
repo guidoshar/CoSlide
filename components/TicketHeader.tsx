@@ -8,6 +8,8 @@ interface TicketHeaderProps {
   userProfile?: string | null;
   onProfileUpdate?: (profile: string) => void;
   onProfileRegenerate?: () => void;
+  onOpenSettings?: () => void;
+  hasCustomLLM?: boolean;
 }
 
 export default function TicketHeader({
@@ -15,6 +17,8 @@ export default function TicketHeader({
   userProfile,
   onProfileUpdate,
   onProfileRegenerate,
+  onOpenSettings,
+  hasCustomLLM,
 }: TicketHeaderProps) {
   return (
     <header className="border-b-4 border-black bg-[#F4F1EA] relative">
@@ -42,8 +46,8 @@ export default function TicketHeader({
         {/* Polka dot decorative strip */}
         <div className="polka-dot w-16 border-l-4 border-black opacity-20" />
 
-        {/* Ticket info + barcode section */}
-        <div className="flex items-center gap-4 px-6 py-4 border-l-4 border-black">
+        {/* Ticket info + actions */}
+        <div className="flex items-center gap-3 px-6 py-4 border-l-4 border-black">
           <div className="text-right">
             <p className="font-mono text-xs tracking-widest uppercase">
               [ NO. 2026-BP-001 ]
@@ -59,6 +63,21 @@ export default function TicketHeader({
               onUpdate={onProfileUpdate}
               onRegenerate={onProfileRegenerate}
             />
+          )}
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              className={`
+                font-mono text-[10px] uppercase tracking-widest
+                px-3 py-2 border-2 transition-colors duration-150 cursor-pointer
+                ${hasCustomLLM
+                  ? "border-green-700 text-green-700 hover:bg-green-700 hover:text-[#F4F1EA]"
+                  : "border-black hover:bg-black hover:text-[#F4F1EA]"}
+              `}
+              title="LLM Configuration"
+            >
+              {hasCustomLLM ? "LLM ✓" : "LLM"}
+            </button>
           )}
           <button
             onClick={onLogout}

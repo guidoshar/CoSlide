@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
-import { AzureOpenAI } from "openai";
+import { NextRequest } from "next/server";
 import { STYLE_PRESETS, LANGUAGES } from "@/lib/presets";
+import { resolveConfig, chatCompletionStream } from "@/lib/llm-client";
+import type { LLMConfig } from "@/lib/llm-config";
 
 const BASE_PROMPT = `You are an elite presentation strategist who creates deeply insightful, well-structured slide decks. You do NOT produce generic overviews — every slide must contain SPECIFIC, ACTIONABLE, SUBSTANTIVE content.
 
@@ -60,32 +61,23 @@ export async function POST(request: NextRequest) {
       language = "auto",
       userProfile,
       attachedFiles = [],
+      llmConfig: requestLLMConfig,
     } = body;
 
     if (!prompt || typeof prompt !== "string") {
-      return NextResponse.json(
-        { error: "Missing or invalid prompt" },
-        { status: 400 }
+      return new Response(
+        JSON.stringify({ error: "Missing or invalid prompt" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
 
-    const apiKey = process.env.AZURE_OPENAI_API_KEY;
-    const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-    const deployment = process.env.AZURE_OPENAI_DEPLOYMENT;
-
-    if (!apiKey || !endpoint || !deployment) {
-      return NextResponse.json(
-        { error: "Azure OpenAI not configured. Set AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and AZURE_OPENAI_DEPLOYMENT in .env.local" },
-        { status: 500 }
+    const config = resolveConfig(requestLLMConfig as LLMConfig | undefined);
+    if (!config) {
+      return new Response(
+        JSON.stringify({ error: "No LLM configured. Set environment variables or configure in Settings." }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
       );
     }
-
-    const client = new AzureOpenAI({
-      apiKey,
-      endpoint,
-      deployment,
-      apiVersion: "2024-12-01-preview",
-    });
 
     const systemPrompt = buildSystemPrompt(style, language, userProfile);
 
@@ -107,14 +99,14 @@ export async function POST(request: NextRequest) {
       ? `${prompt}\n\nREFERENCE MATERIAL FROM UPLOADED FILES:${textAttachments}`
       : prompt;
 
-    type MessageContent = string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
+    type MessageContent = string | Array<Record<string, unknown>>;
 
     let userContent: MessageContent;
     if (imageAttachments.length > 0) {
       userContent = [
-        { type: "text" as const, text: userTextContent },
+        { type: "text", text: userTextContent },
         ...imageAttachments.map((img) => ({
-          type: "image_url" as const,
+          type: "image_url",
           image_url: { url: img.content },
         })),
       ];
@@ -122,38 +114,74 @@ export async function POST(request: NextRequest) {
       userContent = userTextContent;
     }
 
-    const completion = await client.chat.completions.create({
-      model: deployment,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 128000,
+    const messages = [
+      { role: "system" as const, content: systemPrompt },
+      { role: "user" as const, content: userContent },
+    ];
+
+    const isJsonCapable = config.provider !== "anthropic";
+
+    const encoder = new TextEncoder();
+    function sendSSE(data: Record<string, unknown>): Uint8Array {
+      return encoder.encode(`data: ${JSON.stringify(data)}\n\n`);
+    }
+
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          controller.enqueue(sendSSE({ type: "stage", stage: "connecting" }));
+
+          const stream = await chatCompletionStream(config, messages, 128000, isJsonCapable);
+
+          controller.enqueue(sendSSE({ type: "stage", stage: "streaming" }));
+
+          let fullContent = "";
+          let tokenCount = 0;
+
+          for await (const delta of stream) {
+            fullContent += delta;
+            tokenCount++;
+            controller.enqueue(sendSSE({ type: "token", content: delta, count: tokenCount }));
+          }
+
+          controller.enqueue(sendSSE({ type: "stage", stage: "parsing" }));
+
+          const parsed = JSON.parse(fullContent);
+
+          if (!parsed.presentation?.slides?.length) {
+            controller.enqueue(sendSSE({ type: "error", error: "Invalid AI response structure" }));
+            controller.close();
+            return;
+          }
+
+          controller.enqueue(sendSSE({
+            type: "done",
+            presentation: parsed.presentation,
+            tokenCount,
+          }));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Stream error";
+          console.error("[/api/generate stream]", err);
+          controller.enqueue(sendSSE({ type: "error", error: message }));
+        } finally {
+          controller.close();
+        }
+      },
     });
 
-    const content = completion.choices[0]?.message?.content;
-
-    if (!content) {
-      return NextResponse.json(
-        { error: "Empty response from AI model" },
-        { status: 502 }
-      );
-    }
-
-    const parsed = JSON.parse(content);
-
-    if (!parsed.presentation?.slides?.length) {
-      return NextResponse.json(
-        { error: "Invalid AI response structure" },
-        { status: 502 }
-      );
-    }
-
-    return NextResponse.json(parsed);
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   } catch (err) {
     console.error("[/api/generate]", err);
     const message = err instanceof Error ? err.message : "Internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return new Response(
+      JSON.stringify({ error: message }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
   }
 }

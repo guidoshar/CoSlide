@@ -1,20 +1,24 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import TicketHeader from "./TicketHeader";
 import TerminalStatus from "./TerminalStatus";
+import type { StreamStage } from "./TerminalStatus";
 import CompletionPanel from "./CompletionPanel";
 import ConfigPanel from "./ConfigPanel";
 import TemplatePanel from "./TemplatePanel";
 import FileUploadZone from "./FileUploadZone";
 import HistorySidebar from "./HistorySidebar";
+import SettingsModal from "./SettingsModal";
 import { generatePPTX } from "@/lib/generate-pptx";
 import type { Presentation, LogoPosition, LogoConfig, AttachedFile, HistoryItem } from "@/lib/types";
 import type { OutputFormat, StyleColors } from "@/lib/presets";
+import type { LLMConfig } from "@/lib/llm-config";
 import { getStyleById } from "@/lib/presets";
-import { loadHistory, saveToHistory } from "@/lib/history";
+import { loadLLMConfig } from "@/lib/llm-config";
+import { loadHistory, saveToHistory, updateHistoryItem } from "@/lib/history";
 
-type Phase = "idle" | "generating-json" | "rendering-pptx" | "summarizing" | "done" | "error";
+type Phase = "idle" | "processing" | "done" | "error";
 
 interface WorkbenchProps {
   onLogout: () => void;
@@ -32,6 +36,12 @@ export default function Workbench({
   const [prompt, setPrompt] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [errorMsg, setErrorMsg] = useState("");
+
+  const [streamStage, setStreamStage] = useState<StreamStage>("connecting");
+  const [streamedContent, setStreamedContent] = useState("");
+  const [tokenCount, setTokenCount] = useState(0);
+  const [streamStartTime, setStreamStartTime] = useState(0);
+
   const [totalSlides, setTotalSlides] = useState(0);
   const [currentSlide, setCurrentSlide] = useState(0);
 
@@ -53,6 +63,11 @@ export default function Workbench({
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
 
+  const [llmConfig, setLLMConfig] = useState<LLMConfig | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+
+  const abortRef = useRef<AbortController | null>(null);
+
   useEffect(() => {
     try {
       const savedLogo = localStorage.getItem("coslide_logo");
@@ -63,9 +78,10 @@ export default function Workbench({
       }
       const savedColors = localStorage.getItem("coslide_color_overrides");
       if (savedColors) setColorOverrides(JSON.parse(savedColors));
-    } catch { /* ignore corrupt data */ }
+    } catch { /* ignore */ }
 
     setHistory(loadHistory());
+    setLLMConfig(loadLLMConfig());
   }, []);
 
   const refreshHistory = useCallback(() => {
@@ -101,34 +117,58 @@ export default function Workbench({
     ? { data: logoData, position: logoPosition }
     : undefined;
 
-  const fetchSummary = useCallback(async (presentation: Presentation, userPrompt: string) => {
+  const fetchSummary = useCallback(async (
+    presentation: Presentation,
+    userPrompt: string,
+    historyId: string,
+  ) => {
     setSummaryLoading(true);
     setAiSummary(null);
     try {
       const res = await fetch("/api/summarize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ presentation, userPrompt, userProfile: userProfile || undefined }),
+        body: JSON.stringify({
+          presentation,
+          userPrompt,
+          userProfile: userProfile || undefined,
+          llmConfig: llmConfig || undefined,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
-        setAiSummary(data.summary || null);
+        const summary = data.summary || null;
+        setAiSummary(summary);
+        if (summary && historyId) {
+          updateHistoryItem(historyId, { aiSummary: summary });
+          refreshHistory();
+        }
       }
     } catch {
       /* Non-critical */
     } finally {
       setSummaryLoading(false);
     }
-  }, [userProfile]);
+  }, [userProfile, llmConfig, refreshHistory]);
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) return;
 
-    setPhase("generating-json");
+    abortRef.current?.abort();
+    const abortController = new AbortController();
+    abortRef.current = abortController;
+
+    setPhase("processing");
+    setStreamStage("connecting");
+    setStreamedContent("");
+    setTokenCount(0);
+    setStreamStartTime(Date.now());
     setErrorMsg("");
     setPresentationData(null);
     setPptxBlob(null);
     setAiSummary(null);
+    setTotalSlides(0);
+    setCurrentSlide(0);
 
     try {
       const res = await fetch("/api/generate", {
@@ -140,6 +180,7 @@ export default function Workbench({
           language,
           format: outputFormat,
           userProfile: userProfile || undefined,
+          llmConfig: llmConfig || undefined,
           attachedFiles: attachedFiles
             .filter((f) => f.status === "ready")
             .map((f) => ({
@@ -148,6 +189,7 @@ export default function Workbench({
               fileName: f.fileName,
             })),
         }),
+        signal: abortController.signal,
       });
 
       if (!res.ok) {
@@ -155,8 +197,51 @@ export default function Workbench({
         throw new Error(errData.error || `HTTP ${res.status}`);
       }
 
-      const data = await res.json();
-      const presentation: Presentation = data.presentation;
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response stream available");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let presentation: Presentation | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+
+          try {
+            const evt = JSON.parse(jsonStr);
+
+            switch (evt.type) {
+              case "stage":
+                setStreamStage(evt.stage as StreamStage);
+                break;
+              case "token":
+                setStreamedContent((prev) => prev + evt.content);
+                setTokenCount(evt.count);
+                break;
+              case "done":
+                presentation = evt.presentation;
+                break;
+              case "error":
+                throw new Error(evt.error);
+            }
+          } catch (parseErr) {
+            if (parseErr instanceof Error && parseErr.message !== jsonStr) {
+              throw parseErr;
+            }
+          }
+        }
+      }
 
       if (!presentation?.slides?.length) {
         throw new Error("Invalid response: no slides found");
@@ -165,7 +250,7 @@ export default function Workbench({
       setPresentationData(presentation);
 
       if (outputFormat === "pptx") {
-        setPhase("rendering-pptx");
+        setStreamStage("rendering-pptx");
         setTotalSlides(presentation.slides.length);
         setCurrentSlide(0);
 
@@ -180,8 +265,9 @@ export default function Workbench({
         setPptxBlob(blob);
       }
 
+      const historyId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const historyItem: HistoryItem = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        id: historyId,
         title: presentation.title,
         prompt: prompt.trim(),
         outputFormat,
@@ -192,26 +278,30 @@ export default function Workbench({
         presentation,
       };
       saveToHistory(historyItem);
-      setActiveHistoryId(historyItem.id);
+      setActiveHistoryId(historyId);
       refreshHistory();
 
-      setPhase("summarizing");
-      fetchSummary(presentation, prompt.trim());
+      setStreamStage("summarizing");
+      fetchSummary(presentation, prompt.trim(), historyId);
       setPhase("done");
     } catch (err) {
+      if (abortController.signal.aborted) return;
       setPhase("error");
       setErrorMsg(err instanceof Error ? err.message : "Unknown error");
     }
-  }, [prompt, styleId, language, outputFormat, fetchSummary, userProfile, logoConfig, colorOverrides, attachedFiles, refreshHistory]);
+  }, [prompt, styleId, language, outputFormat, fetchSummary, userProfile, logoConfig, colorOverrides, attachedFiles, refreshHistory, llmConfig]);
 
   const handleContinueEditing = () => {
     setPhase("idle");
     setErrorMsg("");
     setTotalSlides(0);
     setCurrentSlide(0);
+    setStreamedContent("");
+    setTokenCount(0);
   };
 
   const handleNewSession = () => {
+    abortRef.current?.abort();
     setPrompt("");
     setPhase("idle");
     setErrorMsg("");
@@ -222,9 +312,12 @@ export default function Workbench({
     setActiveHistoryId(null);
     setTotalSlides(0);
     setCurrentSlide(0);
+    setStreamedContent("");
+    setTokenCount(0);
   };
 
   const handleSelectHistory = (item: HistoryItem) => {
+    abortRef.current?.abort();
     setActiveHistoryId(item.id);
     setPrompt(item.prompt);
     setOutputFormat(item.outputFormat as OutputFormat);
@@ -232,14 +325,14 @@ export default function Workbench({
     setLanguage(item.language);
     setPresentationData(item.presentation);
     setPptxBlob(null);
-    setAiSummary(null);
+    setAiSummary(item.aiSummary || null);
     setSummaryLoading(false);
     setAttachedFiles([]);
     setPhase("done");
     setErrorMsg("");
+    setStreamedContent("");
+    setTokenCount(0);
   };
-
-  const isProcessing = phase === "generating-json" || phase === "rendering-pptx" || phase === "summarizing";
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -248,10 +341,21 @@ export default function Workbench({
         userProfile={userProfile}
         onProfileUpdate={onProfileUpdate}
         onProfileRegenerate={onProfileRegenerate}
+        onOpenSettings={() => setShowSettings(true)}
+        hasCustomLLM={!!llmConfig}
       />
 
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          onConfigChange={(cfg) => {
+            setLLMConfig(cfg);
+            setShowSettings(false);
+          }}
+        />
+      )}
+
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
         <HistorySidebar
           items={history}
           currentId={activeHistoryId}
@@ -260,7 +364,6 @@ export default function Workbench({
           onHistoryChange={refreshHistory}
         />
 
-        {/* Main content */}
         <main className="flex-1 flex flex-col overflow-y-auto">
           <div className="max-w-5xl w-full mx-auto p-6 md:p-10 flex-1 flex flex-col">
 
@@ -353,26 +456,16 @@ export default function Workbench({
               </>
             )}
 
-            {isProcessing && (
+            {phase === "processing" && (
               <div className="mb-6">
                 <TerminalStatus
-                  phase={phase === "summarizing" ? "rendering-pptx" : phase as "generating-json" | "rendering-pptx"}
+                  stage={streamStage}
+                  streamedContent={streamedContent}
+                  tokenCount={tokenCount}
                   totalSlides={totalSlides}
                   currentSlide={currentSlide}
+                  startTime={streamStartTime}
                 />
-                {phase === "summarizing" && (
-                  <div className="mt-3 bg-black border-4 border-black p-4">
-                    <p className="font-mono text-sm text-yellow-400">
-                      {"> "}AI ASSISTANT COMPOSING SUMMARY...
-                      <span className="cursor-blink ml-1">█</span>
-                    </p>
-                  </div>
-                )}
-                <div className="mt-4 py-4 font-mono text-sm font-bold uppercase tracking-[0.2em] bg-black text-green-400 border-4 border-black text-center">
-                  {phase === "generating-json" && "PROCESSING..."}
-                  {phase === "rendering-pptx" && "RENDERING SLIDES..."}
-                  {phase === "summarizing" && "FINALIZING..."}
-                </div>
               </div>
             )}
 

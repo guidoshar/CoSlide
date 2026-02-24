@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { AzureOpenAI } from "openai";
+import { resolveConfig, chatCompletion } from "@/lib/llm-client";
+import type { LLMConfig } from "@/lib/llm-config";
 
 const SYSTEM_PROMPT = `你是一个用户画像分析助手。根据用户提供的信息，生成一段详细的第三人称用户描述档案。
 
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
     name = body.name || "";
     profession = body.profession || "";
     preferences = body.preferences || "";
+    const requestLLMConfig = body.llmConfig;
 
     const inputParts: string[] = [];
     if (name) inputParts.push(`称呼：${name}`);
@@ -37,38 +39,23 @@ export async function POST(request: NextRequest) {
     const input = inputParts.join("\n");
 
     if (!input || input.length < 2) {
-      return NextResponse.json(
-        { error: "请至少提供一些信息" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "请至少提供一些信息" }, { status: 400 });
     }
 
-    const apiKey = process.env.AZURE_OPENAI_API_KEY;
-    const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-    const deployment = process.env.AZURE_OPENAI_DEPLOYMENT;
-
-    if (!apiKey || !endpoint || !deployment) {
+    const config = resolveConfig(requestLLMConfig as LLMConfig | undefined);
+    if (!config) {
       const fallback = buildFallbackProfile(name, profession, preferences);
       return NextResponse.json({ profile: fallback });
     }
 
-    const client = new AzureOpenAI({
-      apiKey,
-      endpoint,
-      deployment,
-      apiVersion: "2024-12-01-preview",
-    });
-
-    const completion = await client.chat.completions.create({
-      model: deployment,
-      messages: [
+    const content = await chatCompletion(
+      config,
+      [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: input },
       ],
-      max_completion_tokens: 512,
-    });
-
-    const content = completion.choices[0]?.message?.content;
+      512,
+    );
 
     if (!content) {
       const fallback = buildFallbackProfile(name, profession, preferences);

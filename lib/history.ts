@@ -21,6 +21,15 @@ export function saveToHistory(item: HistoryItem): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
 }
 
+export function updateHistoryItem(id: string, updates: Partial<HistoryItem>): void {
+  const items = loadHistory();
+  const idx = items.findIndex((i) => i.id === id);
+  if (idx >= 0) {
+    items[idx] = { ...items[idx], ...updates };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  }
+}
+
 export function deleteFromHistory(id: string): void {
   const items = loadHistory().filter((i) => i.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(items));

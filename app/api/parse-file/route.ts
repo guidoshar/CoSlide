@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import mammoth from "mammoth";
 
-export const config = {
-  api: { bodyParser: false },
-};
-
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -46,7 +42,7 @@ async function parsePDF(buffer: Buffer, fileName: string) {
   }
 
   const form = new FormData();
-  form.append("file", new Blob([buffer], { type: "application/pdf" }), fileName);
+  form.append("file", new Blob([new Uint8Array(buffer)], { type: "application/pdf" }), fileName);
 
   const res = await fetch(`${parserUrl}/parse`, {
     method: "POST",
