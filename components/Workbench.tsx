@@ -7,10 +7,12 @@ import CompletionPanel from "./CompletionPanel";
 import ConfigPanel from "./ConfigPanel";
 import TemplatePanel from "./TemplatePanel";
 import FileUploadZone from "./FileUploadZone";
+import HistorySidebar from "./HistorySidebar";
 import { generatePPTX } from "@/lib/generate-pptx";
-import type { Presentation, LogoPosition, LogoConfig, AttachedFile } from "@/lib/types";
+import type { Presentation, LogoPosition, LogoConfig, AttachedFile, HistoryItem } from "@/lib/types";
 import type { OutputFormat, StyleColors } from "@/lib/presets";
 import { getStyleById } from "@/lib/presets";
+import { loadHistory, saveToHistory } from "@/lib/history";
 
 type Phase = "idle" | "generating-json" | "rendering-pptx" | "summarizing" | "done" | "error";
 
@@ -48,6 +50,9 @@ export default function Workbench({
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
 
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
+
   useEffect(() => {
     try {
       const savedLogo = localStorage.getItem("coslide_logo");
@@ -59,6 +64,12 @@ export default function Workbench({
       const savedColors = localStorage.getItem("coslide_color_overrides");
       if (savedColors) setColorOverrides(JSON.parse(savedColors));
     } catch { /* ignore corrupt data */ }
+
+    setHistory(loadHistory());
+  }, []);
+
+  const refreshHistory = useCallback(() => {
+    setHistory(loadHistory());
   }, []);
 
   const handleLogoChange = useCallback((data: string | null) => {
@@ -104,11 +115,11 @@ export default function Workbench({
         setAiSummary(data.summary || null);
       }
     } catch {
-      // Non-critical
+      /* Non-critical */
     } finally {
       setSummaryLoading(false);
     }
-  }, []);
+  }, [userProfile]);
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) return;
@@ -169,6 +180,21 @@ export default function Workbench({
         setPptxBlob(blob);
       }
 
+      const historyItem: HistoryItem = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        title: presentation.title,
+        prompt: prompt.trim(),
+        outputFormat,
+        styleId,
+        language,
+        slideCount: presentation.slides.length,
+        createdAt: Date.now(),
+        presentation,
+      };
+      saveToHistory(historyItem);
+      setActiveHistoryId(historyItem.id);
+      refreshHistory();
+
       setPhase("summarizing");
       fetchSummary(presentation, prompt.trim());
       setPhase("done");
@@ -176,13 +202,41 @@ export default function Workbench({
       setPhase("error");
       setErrorMsg(err instanceof Error ? err.message : "Unknown error");
     }
-  }, [prompt, styleId, language, outputFormat, fetchSummary, userProfile, logoConfig, colorOverrides, attachedFiles]);
+  }, [prompt, styleId, language, outputFormat, fetchSummary, userProfile, logoConfig, colorOverrides, attachedFiles, refreshHistory]);
 
   const handleContinueEditing = () => {
     setPhase("idle");
     setErrorMsg("");
     setTotalSlides(0);
     setCurrentSlide(0);
+  };
+
+  const handleNewSession = () => {
+    setPrompt("");
+    setPhase("idle");
+    setErrorMsg("");
+    setPresentationData(null);
+    setPptxBlob(null);
+    setAiSummary(null);
+    setAttachedFiles([]);
+    setActiveHistoryId(null);
+    setTotalSlides(0);
+    setCurrentSlide(0);
+  };
+
+  const handleSelectHistory = (item: HistoryItem) => {
+    setActiveHistoryId(item.id);
+    setPrompt(item.prompt);
+    setOutputFormat(item.outputFormat as OutputFormat);
+    setStyleId(item.styleId);
+    setLanguage(item.language);
+    setPresentationData(item.presentation);
+    setPptxBlob(null);
+    setAiSummary(null);
+    setSummaryLoading(false);
+    setAttachedFiles([]);
+    setPhase("done");
+    setErrorMsg("");
   };
 
   const isProcessing = phase === "generating-json" || phase === "rendering-pptx" || phase === "summarizing";
@@ -196,154 +250,160 @@ export default function Workbench({
         onProfileRegenerate={onProfileRegenerate}
       />
 
-      <main className="flex-1 flex flex-col max-w-5xl w-full mx-auto p-6 md:p-10">
+      <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar */}
+        <HistorySidebar
+          items={history}
+          currentId={activeHistoryId}
+          onSelect={handleSelectHistory}
+          onNewSession={handleNewSession}
+          onHistoryChange={refreshHistory}
+        />
 
-        {(phase === "idle" || phase === "error") && (
-          <>
-            {/* Prompt input */}
-            <div className="flex items-center gap-3 mb-4">
-              <div className="polka-dot w-6 h-6 opacity-30" />
-              <span className="font-mono text-xs uppercase tracking-[0.3em]">
-                PROMPT INPUT — DESCRIBE YOUR PRESENTATION
-              </span>
-              <div className="flex-1 border-b-2 border-dashed border-black opacity-30" />
-            </div>
+        {/* Main content */}
+        <main className="flex-1 flex flex-col overflow-y-auto">
+          <div className="max-w-5xl w-full mx-auto p-6 md:p-10 flex-1 flex flex-col">
 
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="例如：帮我生成一份针对 Coty 集团的 AI 知识库售前汇报，强调检索效率提升，8页"
-              className="
-                w-full h-48 md:h-56 p-6
-                font-mono text-base leading-relaxed
-                bg-white border-4 border-black
-                placeholder:text-gray-400 placeholder:text-sm
-                resize-none
-                focus:outline-none focus:ring-0
-              "
-            />
+            {(phase === "idle" || phase === "error") && (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="polka-dot w-6 h-6 opacity-30" />
+                  <span className="font-mono text-xs uppercase tracking-[0.3em]">
+                    PROMPT INPUT — DESCRIBE YOUR PRESENTATION
+                  </span>
+                  <div className="flex-1 border-b-2 border-dashed border-black opacity-30" />
+                </div>
 
-            <div className="flex justify-between items-center mt-2 mb-4">
-              <span className="font-mono text-[10px] uppercase tracking-widest opacity-40">
-                {prompt.length} CHARS
-              </span>
-              <span className="font-mono text-[10px] uppercase tracking-widest opacity-40">
-                UTF-8 ENCODED
-              </span>
-            </div>
+                <textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="例如：帮我生成一份针对 Coty 集团的 AI 知识库售前汇报，强调检索效率提升，8页"
+                  className="
+                    w-full h-48 md:h-56 p-6
+                    font-mono text-base leading-relaxed
+                    bg-white border-4 border-black
+                    placeholder:text-gray-400 placeholder:text-sm
+                    resize-none
+                    focus:outline-none focus:ring-0
+                  "
+                />
 
-            {/* Config panel */}
-            <div className="mb-4">
-              <ConfigPanel
-                format={outputFormat}
+                <div className="flex justify-between items-center mt-2 mb-4">
+                  <span className="font-mono text-[10px] uppercase tracking-widest opacity-40">
+                    {prompt.length} CHARS
+                  </span>
+                  <span className="font-mono text-[10px] uppercase tracking-widest opacity-40">
+                    UTF-8 ENCODED
+                  </span>
+                </div>
+
+                <div className="mb-4">
+                  <ConfigPanel
+                    format={outputFormat}
+                    styleId={styleId}
+                    language={language}
+                    onFormatChange={setOutputFormat}
+                    onStyleChange={setStyleId}
+                    onLanguageChange={setLanguage}
+                  />
+                </div>
+
+                <div className="mb-4">
+                  <FileUploadZone
+                    files={attachedFiles}
+                    onFilesChange={setAttachedFiles}
+                  />
+                </div>
+
+                <div className="mb-4">
+                  <TemplatePanel
+                    logoData={logoData}
+                    logoPosition={logoPosition}
+                    onLogoChange={handleLogoChange}
+                    onLogoPositionChange={handleLogoPositionChange}
+                    colorOverrides={colorOverrides}
+                    baseColors={getStyleById(styleId).colors}
+                    onColorOverridesChange={handleColorOverridesChange}
+                  />
+                </div>
+
+                {phase === "error" && (
+                  <div className="mb-4 border-4 border-red-600 bg-red-50 p-4">
+                    <p className="font-mono text-xs uppercase tracking-widest text-red-600">
+                      [ SYSTEM ERROR ] {errorMsg}
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex gap-4 mb-6">
+                  <button
+                    onClick={handleGenerate}
+                    disabled={!prompt.trim()}
+                    className="
+                      flex-1 py-4 font-mono text-sm font-bold uppercase tracking-[0.2em]
+                      bg-black text-[#F4F1EA] border-4 border-black
+                      hover:bg-[#F4F1EA] hover:text-black
+                      disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-black disabled:hover:text-[#F4F1EA]
+                      transition-colors duration-150 cursor-pointer
+                    "
+                  >
+                    [ GENERATE {outputFormat.toUpperCase()} ]
+                  </button>
+                </div>
+              </>
+            )}
+
+            {isProcessing && (
+              <div className="mb-6">
+                <TerminalStatus
+                  phase={phase === "summarizing" ? "rendering-pptx" : phase as "generating-json" | "rendering-pptx"}
+                  totalSlides={totalSlides}
+                  currentSlide={currentSlide}
+                />
+                {phase === "summarizing" && (
+                  <div className="mt-3 bg-black border-4 border-black p-4">
+                    <p className="font-mono text-sm text-yellow-400">
+                      {"> "}AI ASSISTANT COMPOSING SUMMARY...
+                      <span className="cursor-blink ml-1">█</span>
+                    </p>
+                  </div>
+                )}
+                <div className="mt-4 py-4 font-mono text-sm font-bold uppercase tracking-[0.2em] bg-black text-green-400 border-4 border-black text-center">
+                  {phase === "generating-json" && "PROCESSING..."}
+                  {phase === "rendering-pptx" && "RENDERING SLIDES..."}
+                  {phase === "summarizing" && "FINALIZING..."}
+                </div>
+              </div>
+            )}
+
+            {phase === "done" && presentationData && (
+              <CompletionPanel
+                presentation={presentationData}
+                pptxBlob={pptxBlob}
+                summary={aiSummary}
+                summaryLoading={summaryLoading}
+                outputFormat={outputFormat}
                 styleId={styleId}
-                language={language}
-                onFormatChange={setOutputFormat}
-                onStyleChange={setStyleId}
-                onLanguageChange={setLanguage}
-              />
-            </div>
-
-            {/* File upload zone */}
-            <div className="mb-4">
-              <FileUploadZone
-                files={attachedFiles}
-                onFilesChange={setAttachedFiles}
-              />
-            </div>
-
-            {/* Template panel */}
-            <div className="mb-4">
-              <TemplatePanel
-                logoData={logoData}
-                logoPosition={logoPosition}
-                onLogoChange={handleLogoChange}
-                onLogoPositionChange={handleLogoPositionChange}
+                logoConfig={logoConfig}
                 colorOverrides={colorOverrides}
-                baseColors={getStyleById(styleId).colors}
-                onColorOverridesChange={handleColorOverridesChange}
+                onContinueEditing={handleContinueEditing}
               />
-            </div>
-
-            {phase === "error" && (
-              <div className="mb-4 border-4 border-red-600 bg-red-50 p-4">
-                <p className="font-mono text-xs uppercase tracking-widest text-red-600">
-                  [ SYSTEM ERROR ] {errorMsg}
-                </p>
-              </div>
             )}
 
-            {/* Generate button */}
-            <div className="flex gap-4 mb-6">
-              <button
-                onClick={handleGenerate}
-                disabled={!prompt.trim()}
-                className="
-                  flex-1 py-4 font-mono text-sm font-bold uppercase tracking-[0.2em]
-                  bg-black text-[#F4F1EA] border-4 border-black
-                  hover:bg-[#F4F1EA] hover:text-black
-                  disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-black disabled:hover:text-[#F4F1EA]
-                  transition-colors duration-150 cursor-pointer
-                "
-              >
-                [ GENERATE {outputFormat.toUpperCase()} ]
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* Processing terminal */}
-        {isProcessing && (
-          <div className="mb-6">
-            <TerminalStatus
-              phase={phase === "summarizing" ? "rendering-pptx" : phase as "generating-json" | "rendering-pptx"}
-              totalSlides={totalSlides}
-              currentSlide={currentSlide}
-            />
-            {phase === "summarizing" && (
-              <div className="mt-3 bg-black border-4 border-black p-4">
-                <p className="font-mono text-sm text-yellow-400">
-                  {"> "}AI ASSISTANT COMPOSING SUMMARY...
-                  <span className="cursor-blink ml-1">█</span>
-                </p>
+            <div className="mt-auto pt-10">
+              <div className="border-t-4 border-dashed border-black pt-3 flex justify-between items-center">
+                <span className="font-mono text-[10px] tracking-[0.3em] uppercase opacity-30">
+                  COSLIDE SYSTEMS — DECK FABRICATION UNIT
+                </span>
+                <div className="barcode w-32 h-5 opacity-30" />
+                <span className="font-mono text-[10px] tracking-[0.3em] uppercase opacity-30">
+                  BUILD 2026.02
+                </span>
               </div>
-            )}
-            <div className="mt-4 py-4 font-mono text-sm font-bold uppercase tracking-[0.2em] bg-black text-green-400 border-4 border-black text-center">
-              {phase === "generating-json" && "PROCESSING..."}
-              {phase === "rendering-pptx" && "RENDERING SLIDES..."}
-              {phase === "summarizing" && "FINALIZING..."}
             </div>
           </div>
-        )}
-
-        {/* Completion panel */}
-        {phase === "done" && presentationData && (
-          <CompletionPanel
-            presentation={presentationData}
-            pptxBlob={pptxBlob}
-            summary={aiSummary}
-            summaryLoading={summaryLoading}
-            outputFormat={outputFormat}
-            styleId={styleId}
-            logoConfig={logoConfig}
-            colorOverrides={colorOverrides}
-            onContinueEditing={handleContinueEditing}
-          />
-        )}
-
-        {/* Footer */}
-        <div className="mt-auto pt-10">
-          <div className="border-t-4 border-dashed border-black pt-3 flex justify-between items-center">
-            <span className="font-mono text-[10px] tracking-[0.3em] uppercase opacity-30">
-              COSLIDE SYSTEMS — DECK FABRICATION UNIT
-            </span>
-            <div className="barcode w-32 h-5 opacity-30" />
-            <span className="font-mono text-[10px] tracking-[0.3em] uppercase opacity-30">
-              BUILD 2026.02
-            </span>
-          </div>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

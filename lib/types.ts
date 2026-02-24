@@ -31,3 +31,15 @@ export interface AttachedFile {
   status: "parsing" | "ready" | "error";
   error?: string;
 }
+
+export interface HistoryItem {
+  id: string;
+  title: string;
+  prompt: string;
+  outputFormat: "pptx" | "html";
+  styleId: string;
+  language: string;
+  slideCount: number;
+  createdAt: number;
+  presentation: Presentation;
+}
