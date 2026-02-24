@@ -7,8 +7,10 @@
 一个带 **Retro-Pop Ticket Brutalism**（复古波点票据粗野主义）视觉系统的 AI 演示文稿生成器。输入自然语言需求，调用大语言模型生成结构化内容，在浏览器端生成并下载 **PPTX** 或导出自包含 **HTML 演示文稿**。
 
 <img width="841" height="297" alt="coslide_logo" src="https://github.com/user-attachments/assets/d7b0435c-2308-4a42-af61-2aaafbb72a0f" />
-<img width="2559" height="1292" alt="Coslide生成流程" src="https://github.com/user-attachments/assets/f0a8610f-0e02-4c35-ab4c-95c7cc39b8bd" />
-<img width="1952" height="1292" alt="Coslide成果展示" src="https://github.com/user-attachments/assets/247173c0-3523-4bd7-9996-d569a3ad0fb0" />
+<img width="2560" height="1290" alt="Coslide生成过程展示" src="https://github.com/user-attachments/assets/e3d06f73-f2ed-49d6-9ebc-465ae2cd1b7f" />
+
+<img width="2558" height="1290" alt="CoSlide成果展示" src="https://github.com/user-attachments/assets/2a292a9c-9b14-4ff7-8596-17670243ee27" />
+
 
 ## 功能特性
 
@@ -26,6 +28,8 @@
 - **完成面板**：操作时间线 + AI 友善总结 + 幻灯片预览 + 点选下载 + 继续修改
 
 <img width="2558" height="1287" alt="image" src="https://github.com/user-attachments/assets/4a30205d-bf15-4166-9bbe-3086b38157c6" />
+<img width="2560" height="1288" alt="用户记忆" src="https://github.com/user-attachments/assets/43c0b8e3-2093-4688-bb86-5c53231cd44d" />
+
 
 ## 技术栈
 
