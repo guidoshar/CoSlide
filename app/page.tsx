@@ -1,14 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import LoginGate from "@/components/LoginGate";
 import Workbench from "@/components/Workbench";
+import OnboardingModal from "@/components/OnboardingModal";
 
 export default function Home() {
   const [authed, setAuthed] = useState<boolean | null>(null);
+  const [userProfile, setUserProfile] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
-    setAuthed(localStorage.getItem("coslide_auth") === "1");
+    const isAuthed = localStorage.getItem("coslide_auth") === "1";
+    setAuthed(isAuthed);
+    if (isAuthed) {
+      const saved = localStorage.getItem("coslide_user_profile");
+      if (saved) {
+        setUserProfile(saved);
+      } else {
+        setShowOnboarding(true);
+      }
+    }
   }, []);
 
   function handleLogout() {
@@ -16,7 +28,35 @@ export default function Home() {
     setAuthed(false);
   }
 
-  // SSR hydration guard — render nothing until client knows auth state
+  function handleLogin() {
+    setAuthed(true);
+    const saved = localStorage.getItem("coslide_user_profile");
+    if (saved) {
+      setUserProfile(saved);
+    } else {
+      setShowOnboarding(true);
+    }
+  }
+
+  const handleOnboardingComplete = useCallback((profile: string) => {
+    localStorage.setItem("coslide_user_profile", profile);
+    setUserProfile(profile);
+    setShowOnboarding(false);
+  }, []);
+
+  const handleOnboardingSkip = useCallback(() => {
+    setShowOnboarding(false);
+  }, []);
+
+  const handleProfileUpdate = useCallback((newProfile: string) => {
+    localStorage.setItem("coslide_user_profile", newProfile);
+    setUserProfile(newProfile);
+  }, []);
+
+  const handleProfileRegenerate = useCallback(() => {
+    setShowOnboarding(true);
+  }, []);
+
   if (authed === null) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -28,8 +68,23 @@ export default function Home() {
   }
 
   if (!authed) {
-    return <LoginGate onLogin={() => setAuthed(true)} />;
+    return <LoginGate onLogin={handleLogin} />;
   }
 
-  return <Workbench onLogout={handleLogout} />;
+  return (
+    <>
+      {showOnboarding && (
+        <OnboardingModal
+          onComplete={handleOnboardingComplete}
+          onSkip={handleOnboardingSkip}
+        />
+      )}
+      <Workbench
+        onLogout={handleLogout}
+        userProfile={userProfile}
+        onProfileUpdate={handleProfileUpdate}
+        onProfileRegenerate={handleProfileRegenerate}
+      />
+    </>
+  );
 }

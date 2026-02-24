@@ -1,4 +1,4 @@
-import type { Presentation } from "./types";
+import type { Presentation, LogoConfig } from "./types";
 import { getStyleById, type StyleColors } from "./presets";
 
 function escapeHtml(text: string): string {
@@ -149,18 +149,36 @@ function buildCSS(C: StyleColors): string {
     padding: 4px 12px; cursor: pointer; font-family: "Courier New", monospace;
     font-size: 12px; transition: all 0.2s;
   }
-  .nav-btn:hover { background: #${C.accent}; border-color: #${C.accent}; color: #fff; }`;
+  .nav-btn:hover { background: #${C.accent}; border-color: #${C.accent}; color: #fff; }
+  .slide-logo {
+    position: absolute; z-index: 10;
+    width: 48px; height: 48px; object-fit: contain;
+  }
+  .slide-logo.top-right { top: 12px; right: 16px; }
+  .slide-logo.bottom-left { bottom: 12px; left: 16px; }`;
 }
 
-export function generateHTML(data: Presentation, styleId: string = "storytelling"): string {
-  const preset = getStyleById(styleId);
+export function generateHTML(
+  data: Presentation,
+  styleId: string = "storytelling",
+  logoConfig?: LogoConfig,
+  colorOverrides?: Partial<StyleColors>,
+): string {
+  const preset = getStyleById(styleId, colorOverrides);
   const C = preset.colors;
   const total = data.slides.length;
 
+  const logoHtml = logoConfig
+    ? `<img class="slide-logo ${logoConfig.position}" src="${logoConfig.data}" alt="Logo" />`
+    : "";
+
   const slidesHtml = data.slides.map((slide, i) => {
-    if (i === 0) return renderCoverSlide(slide, i, total);
-    if (i === total - 1 && total > 1) return renderEndingSlide(slide, i, total);
-    return renderContentSlide(slide, i, total);
+    let html: string;
+    if (i === 0) html = renderCoverSlide(slide, i, total);
+    else if (i === total - 1 && total > 1) html = renderEndingSlide(slide, i, total);
+    else html = renderContentSlide(slide, i, total);
+    if (logoHtml) html = html.replace(/<\/section>/, `${logoHtml}</section>`);
+    return html;
   }).join("\n");
 
   return `<!DOCTYPE html>
@@ -198,8 +216,13 @@ ${slidesHtml}
 </html>`;
 }
 
-export function downloadHTML(data: Presentation, styleId: string = "storytelling") {
-  const html = generateHTML(data, styleId);
+export function downloadHTML(
+  data: Presentation,
+  styleId: string = "storytelling",
+  logoConfig?: LogoConfig,
+  colorOverrides?: Partial<StyleColors>,
+) {
+  const html = generateHTML(data, styleId, logoConfig, colorOverrides);
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

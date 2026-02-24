@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { Presentation } from "@/lib/types";
-import { getStyleById } from "@/lib/presets";
+import type { Presentation, LogoConfig } from "@/lib/types";
+import { getStyleById, type StyleColors } from "@/lib/presets";
 
-function CoverSlide({ slide, colors }: { slide: { title: string; body: string[] }; colors: Record<string, string> }) {
+function CoverSlide({ slide, colors }: { slide: { title: string; body: string[] }; colors: StyleColors }) {
   return (
     <div className="w-full h-full flex flex-col" style={{ background: `#${colors.white}` }}>
       <div className="flex-[52] flex items-end p-6 relative" style={{ background: `#${colors.dark}` }}>
@@ -22,7 +22,7 @@ function CoverSlide({ slide, colors }: { slide: { title: string; body: string[] 
   );
 }
 
-function ContentSlide({ slide, idx, total, colors }: { slide: { title: string; body: string[] }; idx: number; total: number; colors: Record<string, string> }) {
+function ContentSlide({ slide, idx, total, colors }: { slide: { title: string; body: string[] }; idx: number; total: number; colors: StyleColors }) {
   return (
     <div className="w-full h-full relative" style={{ background: `#${colors.white}` }}>
       <div className="absolute left-0 top-0 w-2 h-full" style={{ background: `#${colors.accent}` }} />
@@ -50,7 +50,7 @@ function ContentSlide({ slide, idx, total, colors }: { slide: { title: string; b
   );
 }
 
-function EndingSlide({ slide, colors }: { slide: { title: string; body: string[] }; colors: Record<string, string> }) {
+function EndingSlide({ slide, colors }: { slide: { title: string; body: string[] }; colors: StyleColors }) {
   return (
     <div className="w-full h-full flex flex-col items-center justify-center relative" style={{ background: `#${colors.dark}` }}>
       <div className="absolute top-0 left-0 right-0 h-1" style={{ background: `#${colors.accent}` }} />
@@ -67,16 +67,44 @@ function EndingSlide({ slide, colors }: { slide: { title: string; body: string[]
   );
 }
 
-export default function SlidePreview({ presentation, styleId = "storytelling" }: { presentation: Presentation; styleId?: string }) {
+function LogoOverlay({ logo }: { logo: LogoConfig }) {
+  const pos = logo.position === "top-right"
+    ? "top-1 right-2"
+    : "bottom-1 left-2";
+  return (
+    <img
+      src={logo.data}
+      alt="Logo"
+      className={`absolute ${pos} w-8 h-8 object-contain z-10`}
+    />
+  );
+}
+
+interface SlidePreviewProps {
+  presentation: Presentation;
+  styleId?: string;
+  logoConfig?: LogoConfig;
+  colorOverrides?: Partial<StyleColors>;
+}
+
+export default function SlidePreview({ presentation, styleId = "storytelling", logoConfig, colorOverrides }: SlidePreviewProps) {
   const [current, setCurrent] = useState(0);
   const total = presentation.slides.length;
-  const colors = getStyleById(styleId).colors;
+  const colors = getStyleById(styleId, colorOverrides).colors;
 
   function renderSlide(idx: number) {
     const slide = presentation.slides[idx];
-    if (idx === 0) return <CoverSlide slide={slide} colors={colors} />;
-    if (idx === total - 1 && total > 1) return <EndingSlide slide={slide} colors={colors} />;
-    return <ContentSlide slide={slide} idx={idx} total={total} colors={colors} />;
+    const content = idx === 0
+      ? <CoverSlide slide={slide} colors={colors} />
+      : idx === total - 1 && total > 1
+        ? <EndingSlide slide={slide} colors={colors} />
+        : <ContentSlide slide={slide} idx={idx} total={total} colors={colors} />;
+    return (
+      <div className="relative w-full h-full">
+        {content}
+        {logoConfig && <LogoOverlay logo={logoConfig} />}
+      </div>
+    );
   }
 
   return (

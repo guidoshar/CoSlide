@@ -1,17 +1,32 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import TicketHeader from "./TicketHeader";
 import TerminalStatus from "./TerminalStatus";
 import CompletionPanel from "./CompletionPanel";
 import ConfigPanel from "./ConfigPanel";
+import TemplatePanel from "./TemplatePanel";
+import FileUploadZone from "./FileUploadZone";
 import { generatePPTX } from "@/lib/generate-pptx";
-import type { Presentation } from "@/lib/types";
-import type { OutputFormat } from "@/lib/presets";
+import type { Presentation, LogoPosition, LogoConfig, AttachedFile } from "@/lib/types";
+import type { OutputFormat, StyleColors } from "@/lib/presets";
+import { getStyleById } from "@/lib/presets";
 
 type Phase = "idle" | "generating-json" | "rendering-pptx" | "summarizing" | "done" | "error";
 
-export default function Workbench({ onLogout }: { onLogout: () => void }) {
+interface WorkbenchProps {
+  onLogout: () => void;
+  userProfile?: string | null;
+  onProfileUpdate?: (profile: string) => void;
+  onProfileRegenerate?: () => void;
+}
+
+export default function Workbench({
+  onLogout,
+  userProfile,
+  onProfileUpdate,
+  onProfileRegenerate,
+}: WorkbenchProps) {
   const [prompt, setPrompt] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [errorMsg, setErrorMsg] = useState("");
@@ -22,10 +37,58 @@ export default function Workbench({ onLogout }: { onLogout: () => void }) {
   const [styleId, setStyleId] = useState("executive");
   const [language, setLanguage] = useState("auto");
 
+  const [logoData, setLogoData] = useState<string | null>(null);
+  const [logoPosition, setLogoPosition] = useState<LogoPosition>("top-right");
+  const [colorOverrides, setColorOverrides] = useState<Partial<StyleColors>>({});
+
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+
   const [presentationData, setPresentationData] = useState<Presentation | null>(null);
   const [pptxBlob, setPptxBlob] = useState<Blob | null>(null);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+
+  useEffect(() => {
+    try {
+      const savedLogo = localStorage.getItem("coslide_logo");
+      if (savedLogo) {
+        const parsed = JSON.parse(savedLogo);
+        setLogoData(parsed.data || null);
+        setLogoPosition(parsed.position || "top-right");
+      }
+      const savedColors = localStorage.getItem("coslide_color_overrides");
+      if (savedColors) setColorOverrides(JSON.parse(savedColors));
+    } catch { /* ignore corrupt data */ }
+  }, []);
+
+  const handleLogoChange = useCallback((data: string | null) => {
+    setLogoData(data);
+    if (data) {
+      localStorage.setItem("coslide_logo", JSON.stringify({ data, position: logoPosition }));
+    } else {
+      localStorage.removeItem("coslide_logo");
+    }
+  }, [logoPosition]);
+
+  const handleLogoPositionChange = useCallback((pos: LogoPosition) => {
+    setLogoPosition(pos);
+    if (logoData) {
+      localStorage.setItem("coslide_logo", JSON.stringify({ data: logoData, position: pos }));
+    }
+  }, [logoData]);
+
+  const handleColorOverridesChange = useCallback((overrides: Partial<StyleColors>) => {
+    setColorOverrides(overrides);
+    if (Object.keys(overrides).length > 0) {
+      localStorage.setItem("coslide_color_overrides", JSON.stringify(overrides));
+    } else {
+      localStorage.removeItem("coslide_color_overrides");
+    }
+  }, []);
+
+  const logoConfig: LogoConfig | undefined = logoData
+    ? { data: logoData, position: logoPosition }
+    : undefined;
 
   const fetchSummary = useCallback(async (presentation: Presentation, userPrompt: string) => {
     setSummaryLoading(true);
@@ -34,7 +97,7 @@ export default function Workbench({ onLogout }: { onLogout: () => void }) {
       const res = await fetch("/api/summarize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ presentation, userPrompt }),
+        body: JSON.stringify({ presentation, userPrompt, userProfile: userProfile || undefined }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -65,6 +128,14 @@ export default function Workbench({ onLogout }: { onLogout: () => void }) {
           style: styleId,
           language,
           format: outputFormat,
+          userProfile: userProfile || undefined,
+          attachedFiles: attachedFiles
+            .filter((f) => f.status === "ready")
+            .map((f) => ({
+              type: f.fileType === "image" ? "image" : "text",
+              content: f.content,
+              fileName: f.fileName,
+            })),
         }),
       });
 
@@ -87,9 +158,13 @@ export default function Workbench({ onLogout }: { onLogout: () => void }) {
         setTotalSlides(presentation.slides.length);
         setCurrentSlide(0);
 
-        const blob = await generatePPTX(presentation, styleId, (slideIndex: number) => {
-          setCurrentSlide(slideIndex + 1);
-        });
+        const blob = await generatePPTX(
+          presentation,
+          styleId,
+          (slideIndex: number) => { setCurrentSlide(slideIndex + 1); },
+          logoConfig,
+          colorOverrides,
+        );
 
         setPptxBlob(blob);
       }
@@ -101,7 +176,7 @@ export default function Workbench({ onLogout }: { onLogout: () => void }) {
       setPhase("error");
       setErrorMsg(err instanceof Error ? err.message : "Unknown error");
     }
-  }, [prompt, styleId, language, outputFormat, fetchSummary]);
+  }, [prompt, styleId, language, outputFormat, fetchSummary, userProfile, logoConfig, colorOverrides, attachedFiles]);
 
   const handleContinueEditing = () => {
     setPhase("idle");
@@ -114,7 +189,12 @@ export default function Workbench({ onLogout }: { onLogout: () => void }) {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <TicketHeader onLogout={onLogout} />
+      <TicketHeader
+        onLogout={onLogout}
+        userProfile={userProfile}
+        onProfileUpdate={onProfileUpdate}
+        onProfileRegenerate={onProfileRegenerate}
+      />
 
       <main className="flex-1 flex flex-col max-w-5xl w-full mx-auto p-6 md:p-10">
 
@@ -161,6 +241,27 @@ export default function Workbench({ onLogout }: { onLogout: () => void }) {
                 onFormatChange={setOutputFormat}
                 onStyleChange={setStyleId}
                 onLanguageChange={setLanguage}
+              />
+            </div>
+
+            {/* File upload zone */}
+            <div className="mb-4">
+              <FileUploadZone
+                files={attachedFiles}
+                onFilesChange={setAttachedFiles}
+              />
+            </div>
+
+            {/* Template panel */}
+            <div className="mb-4">
+              <TemplatePanel
+                logoData={logoData}
+                logoPosition={logoPosition}
+                onLogoChange={handleLogoChange}
+                onLogoPositionChange={handleLogoPositionChange}
+                colorOverrides={colorOverrides}
+                baseColors={getStyleById(styleId).colors}
+                onColorOverridesChange={handleColorOverridesChange}
               />
             </div>
 
@@ -224,6 +325,8 @@ export default function Workbench({ onLogout }: { onLogout: () => void }) {
             summaryLoading={summaryLoading}
             outputFormat={outputFormat}
             styleId={styleId}
+            logoConfig={logoConfig}
+            colorOverrides={colorOverrides}
             onContinueEditing={handleContinueEditing}
           />
         )}

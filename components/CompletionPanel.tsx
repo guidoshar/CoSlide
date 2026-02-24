@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Presentation } from "@/lib/types";
-import type { OutputFormat } from "@/lib/presets";
+import type { Presentation, LogoConfig } from "@/lib/types";
+import type { OutputFormat, StyleColors } from "@/lib/presets";
 import { getStyleById } from "@/lib/presets";
 import SlidePreview from "./SlidePreview";
 import { downloadBlob, generatePPTX } from "@/lib/generate-pptx";
@@ -15,6 +15,8 @@ interface CompletionPanelProps {
   summaryLoading: boolean;
   outputFormat: OutputFormat;
   styleId: string;
+  logoConfig?: LogoConfig;
+  colorOverrides?: Partial<StyleColors>;
   onContinueEditing: () => void;
 }
 
@@ -61,11 +63,13 @@ export default function CompletionPanel({
   summaryLoading,
   outputFormat,
   styleId,
+  logoConfig,
+  colorOverrides,
   onContinueEditing,
 }: CompletionPanelProps) {
   const [generatingPptx, setGeneratingPptx] = useState(false);
   const fileName = presentation.title.replace(/[^a-zA-Z0-9\u4e00-\u9fff\s\-_]/g, "").trim() || "presentation";
-  const style = getStyleById(styleId);
+  const style = getStyleById(styleId, colorOverrides);
 
   async function handleDownloadPptx() {
     if (pptxBlob) {
@@ -74,7 +78,7 @@ export default function CompletionPanel({
     }
     setGeneratingPptx(true);
     try {
-      const blob = await generatePPTX(presentation, styleId);
+      const blob = await generatePPTX(presentation, styleId, undefined, logoConfig, colorOverrides);
       downloadBlob(blob, `${fileName}.pptx`);
     } finally {
       setGeneratingPptx(false);
@@ -139,7 +143,7 @@ export default function CompletionPanel({
       </div>
 
       {/* Slide Preview */}
-      <SlidePreview presentation={presentation} styleId={styleId} />
+      <SlidePreview presentation={presentation} styleId={styleId} logoConfig={logoConfig} colorOverrides={colorOverrides} />
 
       {/* Download Center */}
       <div className="border-4 border-black bg-[#F4F1EA]">
@@ -163,7 +167,7 @@ export default function CompletionPanel({
             {generatingPptx ? "[ RENDERING... ]" : "[ DOWNLOAD PPTX ]"}
           </button>
           <button
-            onClick={() => downloadHTML(presentation, styleId)}
+            onClick={() => downloadHTML(presentation, styleId, logoConfig, colorOverrides)}
             className="
               flex-1 py-4 font-mono text-sm font-bold uppercase tracking-[0.2em]
               bg-white text-black border-4 border-black

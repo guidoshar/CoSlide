@@ -1,8 +1,16 @@
 import PptxGenJS from "pptxgenjs";
-import type { Presentation } from "./types";
+import type { Presentation, LogoConfig } from "./types";
 import { getStyleById, type StyleColors } from "./presets";
 
-function addCoverSlide(pres: PptxGenJS, C: StyleColors, slideData: { title: string; body: string[]; notes?: string }, total: number) {
+function addLogo(slide: PptxGenJS.Slide, logo: LogoConfig) {
+  const size = 0.7;
+  const pos = logo.position === "top-right"
+    ? { x: 9.1, y: 0.15 }
+    : { x: 0.3, y: 4.7 };
+  slide.addImage({ data: logo.data, x: pos.x, y: pos.y, w: size, h: size });
+}
+
+function addCoverSlide(pres: PptxGenJS, C: StyleColors, slideData: { title: string; body: string[]; notes?: string }, total: number, logo?: LogoConfig) {
   const slide = pres.addSlide();
   slide.background = { color: C.white };
 
@@ -50,10 +58,11 @@ function addCoverSlide(pres: PptxGenJS, C: StyleColors, slideData: { title: stri
     color: C.line, align: "right",
   });
 
+  if (logo) addLogo(slide, logo);
   if (slideData.notes) slide.addNotes(slideData.notes);
 }
 
-function addContentSlide(pres: PptxGenJS, C: StyleColors, slideData: { title: string; body: string[]; notes?: string }, idx: number, total: number, presTitle: string) {
+function addContentSlide(pres: PptxGenJS, C: StyleColors, slideData: { title: string; body: string[]; notes?: string }, idx: number, total: number, presTitle: string, logo?: LogoConfig) {
   const slide = pres.addSlide();
   slide.background = { color: C.white };
 
@@ -123,10 +132,11 @@ function addContentSlide(pres: PptxGenJS, C: StyleColors, slideData: { title: st
     color: C.muted, align: "right",
   });
 
+  if (logo) addLogo(slide, logo);
   if (slideData.notes) slide.addNotes(slideData.notes);
 }
 
-function addEndingSlide(pres: PptxGenJS, C: StyleColors, slideData: { title: string; body: string[]; notes?: string }, total: number) {
+function addEndingSlide(pres: PptxGenJS, C: StyleColors, slideData: { title: string; body: string[]; notes?: string }, total: number, logo?: LogoConfig) {
   const slide = pres.addSlide();
   slide.background = { color: C.dark };
 
@@ -175,15 +185,18 @@ function addEndingSlide(pres: PptxGenJS, C: StyleColors, slideData: { title: str
     color: C.muted, align: "right",
   });
 
+  if (logo) addLogo(slide, logo);
   if (slideData.notes) slide.addNotes(slideData.notes);
 }
 
 export async function generatePPTX(
   data: Presentation,
   styleId: string = "storytelling",
-  onSlideProgress?: (slideIndex: number) => void
+  onSlideProgress?: (slideIndex: number) => void,
+  logoConfig?: LogoConfig,
+  colorOverrides?: Partial<StyleColors>,
 ): Promise<Blob> {
-  const preset = getStyleById(styleId);
+  const preset = getStyleById(styleId, colorOverrides);
   const C = preset.colors;
   const pres = new PptxGenJS();
 
@@ -198,11 +211,11 @@ export async function generatePPTX(
     const slideData = data.slides[i];
 
     if (i === 0) {
-      addCoverSlide(pres, C, slideData, total);
+      addCoverSlide(pres, C, slideData, total, logoConfig);
     } else if (i === total - 1 && total > 1) {
-      addEndingSlide(pres, C, slideData, total);
+      addEndingSlide(pres, C, slideData, total, logoConfig);
     } else {
-      addContentSlide(pres, C, slideData, i, total, data.title);
+      addContentSlide(pres, C, slideData, i, total, data.title, logoConfig);
     }
 
     onSlideProgress?.(i);

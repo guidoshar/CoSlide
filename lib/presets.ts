@@ -144,8 +144,13 @@ export const LANGUAGES: LanguageOption[] = [
   },
 ];
 
-export function getStyleById(id: string): StylePreset {
-  return STYLE_PRESETS.find((s) => s.id === id) || STYLE_PRESETS[0];
+export function getStyleById(id: string, colorOverrides?: Partial<StyleColors>): StylePreset {
+  const preset = STYLE_PRESETS.find((s) => s.id === id) || STYLE_PRESETS[0];
+  if (!colorOverrides || Object.keys(colorOverrides).length === 0) return preset;
+  return {
+    ...preset,
+    colors: { ...preset.colors, ...colorOverrides },
+  };
 }
 
 export function getLanguageById(id: string): LanguageOption {

@@ -1,8 +1,21 @@
 "use client";
 
 import Image from "next/image";
+import UserProfileCard from "./UserProfileCard";
 
-export default function TicketHeader({ onLogout }: { onLogout: () => void }) {
+interface TicketHeaderProps {
+  onLogout: () => void;
+  userProfile?: string | null;
+  onProfileUpdate?: (profile: string) => void;
+  onProfileRegenerate?: () => void;
+}
+
+export default function TicketHeader({
+  onLogout,
+  userProfile,
+  onProfileUpdate,
+  onProfileRegenerate,
+}: TicketHeaderProps) {
   return (
     <header className="border-b-4 border-black bg-[#F4F1EA] relative">
       {/* Main header row */}
@@ -40,6 +53,13 @@ export default function TicketHeader({ onLogout }: { onLogout: () => void }) {
             </p>
           </div>
           <div className="barcode w-20 h-10" />
+          {userProfile && onProfileUpdate && onProfileRegenerate && (
+            <UserProfileCard
+              profile={userProfile}
+              onUpdate={onProfileUpdate}
+              onRegenerate={onProfileRegenerate}
+            />
+          )}
           <button
             onClick={onLogout}
             className="

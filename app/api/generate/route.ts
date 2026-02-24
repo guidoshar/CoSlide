@@ -28,11 +28,15 @@ CONTENT QUALITY RULES:
 7. DEPTH: Act as if you are a domain expert. Research-quality content. If the topic is technical, use proper terminology. If business, use real frameworks (Porter's, SWOT, TAM/SAM/SOM, etc.).
 8. NO FILLER. Every sentence must pass the test: "Does this tell the audience something they didn't already know?"`;
 
-function buildSystemPrompt(styleId: string, languageId: string): string {
+function buildSystemPrompt(styleId: string, languageId: string, userProfile?: string): string {
   const style = STYLE_PRESETS.find((s) => s.id === styleId);
   const lang = LANGUAGES.find((l) => l.id === languageId);
 
   const parts = [BASE_PROMPT];
+
+  if (userProfile) {
+    parts.push(`\nUSER CONTEXT: ${userProfile}\nTailor the presentation tone, depth, and examples to match this user's background and preferences.`);
+  }
 
   if (style) {
     parts.push(`\n${style.promptFragment}`);
@@ -50,7 +54,13 @@ function buildSystemPrompt(styleId: string, languageId: string): string {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { prompt, style = "executive", language = "auto" } = body;
+    const {
+      prompt,
+      style = "executive",
+      language = "auto",
+      userProfile,
+      attachedFiles = [],
+    } = body;
 
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json(
@@ -77,13 +87,46 @@ export async function POST(request: NextRequest) {
       apiVersion: "2024-12-01-preview",
     });
 
-    const systemPrompt = buildSystemPrompt(style, language);
+    const systemPrompt = buildSystemPrompt(style, language, userProfile);
+
+    interface AttachedFilePayload {
+      type: "text" | "image";
+      content: string;
+      fileName: string;
+    }
+
+    const textAttachments = (attachedFiles as AttachedFilePayload[])
+      .filter((f) => f.type === "text" && f.content)
+      .map((f) => `\n--- Attached file: ${f.fileName} ---\n${f.content}`)
+      .join("\n");
+
+    const imageAttachments = (attachedFiles as AttachedFilePayload[])
+      .filter((f) => f.type === "image" && f.content);
+
+    const userTextContent = textAttachments
+      ? `${prompt}\n\nREFERENCE MATERIAL FROM UPLOADED FILES:${textAttachments}`
+      : prompt;
+
+    type MessageContent = string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
+
+    let userContent: MessageContent;
+    if (imageAttachments.length > 0) {
+      userContent = [
+        { type: "text" as const, text: userTextContent },
+        ...imageAttachments.map((img) => ({
+          type: "image_url" as const,
+          image_url: { url: img.content },
+        })),
+      ];
+    } else {
+      userContent = userTextContent;
+    }
 
     const completion = await client.chat.completions.create({
       model: deployment,
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: prompt },
+        { role: "user", content: userContent },
       ],
       response_format: { type: "json_object" },
       max_completion_tokens: 128000,
