@@ -5,7 +5,8 @@
 
 一个带 **Retro‑Pop Ticket Brutalism**（复古波点票据粗野主义）视觉系统的 Web 工具：登录后输入自然语言需求，调用 **Azure OpenAI** 生成结构化 JSON，再在浏览器端生成并下载 **PPTX**（或导出自包含 **HTML 演示文稿**）。
 <img width="841" height="297" alt="coslide_logo" src="https://github.com/user-attachments/assets/d7b0435c-2308-4a42-af61-2aaafbb72a0f" />
-<img width="2560" height="1288" alt="CoSlide生成流程" src="https://github.com/user-attachments/assets/e89d8602-31c5-470b-b549-7b8bef5586ce" />
+<img width="2559" height="1292" alt="Coslide生成流程" src="https://github.com/user-attachments/assets/f0a8610f-0e02-4c35-ab4c-95c7cc39b8bd" />
+
 
 <img width="1952" height="1292" alt="Coslide成果展示" src="https://github.com/user-attachments/assets/247173c0-3523-4bd7-9996-d569a3ad0fb0" />
 
