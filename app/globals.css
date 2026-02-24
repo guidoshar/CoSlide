@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: #F4F1EA;
+  --color-foreground: #000000;
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.polka-dot {
+  background-image: radial-gradient(#000 2px, transparent 2px);
+  background-size: 16px 16px;
+}
+
+.barcode {
+  background-image: repeating-linear-gradient(
+    90deg,
+    #000 0px,
+    #000 2px,
+    transparent 2px,
+    transparent 4px,
+    #000 4px,
+    #000 5px,
+    transparent 5px,
+    transparent 9px,
+    #000 9px,
+    #000 12px,
+    transparent 12px,
+    transparent 14px,
+    #000 14px,
+    #000 15px,
+    transparent 15px,
+    transparent 18px,
+    #000 18px,
+    #000 21px,
+    transparent 21px,
+    transparent 23px
+  );
+  background-size: 23px 100%;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+}
+
+.ticket-notch {
+  position: relative;
+}
+
+.ticket-notch::before,
+.ticket-notch::after {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  background: var(--color-background);
+  border-radius: 50%;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.ticket-notch::before {
+  left: -12px;
+  box-shadow: inset -3px 0 0 #000;
+}
+
+.ticket-notch::after {
+  right: -12px;
+  box-shadow: inset 3px 0 0 #000;
+}
